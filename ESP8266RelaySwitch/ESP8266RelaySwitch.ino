@@ -10,13 +10,14 @@
 //  https://arduinojson.org/example/http-client/
 //  https://ubidots.com/blog/connect-your-esp8266-to-any-available-wi-fi-network/
 //  https://tttapa.github.io/ESP8266/Chap11%20-%20SPIFFS.html
-//  Gsender ArduinoJson Libraries needed
+//  ArduinoJson Libraries needed - should be installed separately
+//  Gsender library included in this repo - no download needed
 //  python.exe C:\Users\username\AppData\Local\Arduino15\packages\esp8266\hardware\esp8266\2.4.2/tools/espota.py -i 192.168.5.162 -p 8266 --auth= -f C:\Users\username\AppData\Local\Temp\arduino_build_849613/ESP8266RelaySwitch.ino.bin 
 
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
 #include <ESP8266WebServer.h>   // Include the WebServer library
-#include "Gsender.h"
+#include "GmailSender.h"
 #include <ArduinoOTA.h>
 #include <ArduinoJson.h>
 #include <ESP8266HTTPClient.h>

@@ -59,3 +59,11 @@ Secrets.h
 ESP8266RelaySwitch/Secrets.h
 /ESP8266RelaySwitch/Secrets.h
 ./ESP8266RelaySwitch/Secrets.h
+GmailSecrets.h
+ESP8266RelaySwitch/GmailSecrets.h
+/ESP8266RelaySwitch/GmailSecrets.h
+./ESP8266RelaySwitch/GmailSecrets.h
+gmailSecrets.h
+ESP8266RelaySwitch/gmailSecrets.h
+/ESP8266RelaySwitch/gmailSecrets.h
+./ESP8266RelaySwitch/gmailSecrets.h

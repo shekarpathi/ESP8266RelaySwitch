@@ -9,3 +9,7 @@ const char * WiFiPWD3="RobinHood3";
 const char * WiFiSID4="SID4";
 const char * WiFiPWD4="RobinHood4";
 const char * emailSendTo="test@test.com"
+
+const char* EMAILBASE64_LOGIN = "aSDfjtnsiRT98EDrik=";
+const char* EMAILBASE64_PASSWORD = "THisisabase75UiI9588==";
+const char* FROM = "foobar.fuzz@gmail.com";

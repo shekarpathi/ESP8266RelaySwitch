@@ -195,8 +195,8 @@ void setup(void){
   { // Print SSID and RSSI for each network found Serial.print(i + 1);
     emailString += String(i) + ". " + WiFi.SSID(i) + ":" + WiFi.encryptionType(i) + "<BR>";
   }
-  digitalWrite(0, OFF_STATE);
-  digitalWrite(2, OFF_STATE);
+  digitalWrite(RELAY_PIN, OFF_STATE);
+  digitalWrite(LED_PIN, OFF_STATE);
   upSince = getTime();
 
   if(gsender->Subject(espname + " Started")->Send(emailSendTo, emailString)) {

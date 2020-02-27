@@ -38,6 +38,9 @@ String upSince = "";
 String emailSubject = "";
 String emailContent = "";
 
+long previousMillis = millis();   // will store current time in milli seconds
+long interval = 1000*60*60*24;    // interval at which ESP8266 will restart in milliseconds
+
 ESP8266WiFiMulti wifiMulti;     // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
 
 void setup(void){
@@ -47,10 +50,15 @@ void setup(void){
 
   Serial.begin(115200);         // Start the Serial communication to send messages to the computer
   
-  WiFi.mode(WIFI_STA);                    // #1 DO NOT CHAGE the order, this line should come before
-  Serial.println(WiFi.hostname(espname)); // #2 This line is next
-  Serial.println("Connecting to WiFi..");
+  WiFi.mode(WIFI_STA);                             // #1 DO NOT CHAGE the order, this line should come before
+  int setHostnameStatus = WiFi.hostname(espname);  // #2 This line is next
+  if (setHostnameStatus == 1) {
+    Serial.println("You will be able reference this ESP by the DNS name from other machines using http://"+espname+".lan");
+  } else {
+    Serial.println("You will NOT be able reference this ESP by the DNS name from other machines. You will be able to access only using it's IP address");
+  }
 
+  Serial.println("Connecting to WiFi..");
   wifiMulti.addAP(WiFiSID1, WiFiPWD1);
   wifiMulti.addAP(WiFiSID2, WiFiPWD2);
   wifiMulti.addAP(WiFiSID3, WiFiPWD3);
@@ -208,14 +216,23 @@ void setup(void){
 }
 
 void loop(void){
+  // 1
   server.handleClient();
+  // 2
+  ArduinoOTA.handle();
+  // 3
+  MDNS.update();
+  // 4 - Send any pending emails, this is not the most accurate logic, some emails may NOT get sent
   if (emailSubject != "") {
     sendEmail(emailSubject, emailContent);
     emailSubject = "";
     emailContent = "";
   }
-  ArduinoOTA.handle();
-  MDNS.update();
+  // 5 Restart at fixed intervals
+  if(millis() - previousMillis > interval) {
+    sendEmail("Restarting based on internal timer. " + espname, "Restarting " + espname + " ESP");
+    ESP.restart();
+  }
 }
 
 boolean authenticated(String path) {

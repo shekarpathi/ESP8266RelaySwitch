@@ -24,6 +24,7 @@
 #include <ESP8266WiFiMulti.h>
 #define USE_SERIAL Serial
 #include "Secrets.h"
+#include <EEPROM.h>
 
 ESP8266WebServer server(80);            // Create a webserver object that listens for HTTP request on port 80
 Gsender *gsender = Gsender::Instance(); // Getting pointer to class instance
@@ -37,11 +38,22 @@ const int LED_PIN = 2;
 String upSince = "";
 String emailSubject = "";
 String emailContent = "";
+String emailString;
 
 long previousMillis = millis();   // will store current time in milli seconds
 long interval = 1000*60*60*24;    // interval at which ESP8266 will restart in milliseconds
 
 ESP8266WiFiMulti wifiMulti;     // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
+
+  uint addr = 0;
+
+  // structure to hold our data
+  struct { 
+    char ESPHostname[20] = "";
+    char ssid[20] = "";
+    char wifiPassword[40] = "";
+    char switchPassword[40] = "";
+  } data;
 
 void setup(void){
   pinMode(RELAY_PIN, OUTPUT); // initialize digital esp8266 gpio 0, 2 as an output.
@@ -49,6 +61,38 @@ void setup(void){
   delay(100);
 
   Serial.begin(115200);         // Start the Serial communication to send messages to the computer
+
+  EEPROM.begin(512); // Menu -> Tools -> Erase Flash is set to "Sketch Only"  Otherwise it WILL get overwritten every time
+//  initializeEeprom();
+  // 1#) Read EEPROM
+  EEPROM.get(addr,data);
+  Serial.println("Existing values are: "+String(data.ESPHostname)+", "+String(data.ssid)+", "+String(data.wifiPassword)+", "+String(data.switchPassword));
+
+  // 2#) Check if they are valid
+  //     If not, read from the secrets file and save them back to EEPROM
+  if (!isDataValid(data.ESPHostname)) {
+    strncpy(data.ESPHostname, espname.c_str(), 20);
+  }
+  if (!isDataValid(data.ssid)) {
+    strncpy(data.ssid, WiFiSID1, 20);
+  }
+  if (!isDataValid(data.wifiPassword)) {
+    strncpy(data.wifiPassword, WiFiPWD1, 40);
+  }
+  if (!isDataValid(data.switchPassword)) {
+    strncpy(data.switchPassword, switchpassword.c_str(), 40);
+  }
+  EEPROM.put(addr,data);
+  EEPROM.commit();
+  EEPROM.get(addr,data);
+  Serial.println("New values are: "+String(data.ESPHostname)+", "+String(data.ssid)+", "+String(data.wifiPassword)+", "+String(data.switchPassword));
+
+  // 3#) Write the values back from the structure/EEPROM to the ESP8266's memory
+  // EEPROM contains the authoratitive data.  EEPROM and the memory variables will be in sync after this
+  espname = data.ESPHostname;
+  WiFiSID1 = data.ssid;
+  WiFiPWD1 = data.wifiPassword;
+  switchpassword = data.switchPassword;
   
   WiFi.mode(WIFI_STA);                             // #1 DO NOT CHAGE the order, this line should come before
   int setHostnameStatus = WiFi.hostname(espname);  // #2 This line is next
@@ -133,7 +177,52 @@ void setup(void){
     }
   });
  
+  server.on("/ChangeHostname", HTTP_GET, []() {
+    if (authenticated("/ChangeHostname")) {
+      String newHostName = server.arg("hostname"); 
+      Serial.println("newHostName="+newHostName);
+      EEPROM.begin(512); // Menu -> Tools -> Erase Flash is set to "Sketch Only"
+      EEPROM.get(addr,data);
+      Serial.println("3. Old values are: "+String(data.ESPHostname)+", "+String(data.ssid)+", "+String(data.wifiPassword)+", "+String(data.switchPassword));
+      strncpy(data.ESPHostname, newHostName.c_str(), 20);
+      EEPROM.put(addr,data);
+      EEPROM.commit();
+      EEPROM.get(addr,data);
+      Serial.println("4. New values are: "+String(data.ESPHostname)+", "+String(data.ssid)+", "+String(data.wifiPassword)+", "+String(data.switchPassword));
+      server.send ( 200, "text/plain", "New hostname is " + newHostName + ". Restarting ESP8266 now. Will take effect after this restart");
+      delay(3000);
+      ESP.restart();
+    }
+  });
+ 
+  server.on("/ChangeSwitchPassword", HTTP_GET, []() {
+    if (authenticated("/ChangeSwitchPassword")) {
+      String newSwitchPassword = server.arg("switchPassword"); 
+      Serial.println("newSwitchPassword="+newSwitchPassword);
+      EEPROM.begin(512); // Menu -> Tools -> Erase Flash is set to "Sketch Only"
+      EEPROM.get(addr,data);
+      Serial.println("5. Old values are: "+String(data.ESPHostname)+", "+String(data.ssid)+", "+String(data.wifiPassword)+", "+String(data.switchPassword));
+      strncpy(data.switchPassword, newSwitchPassword.c_str(), 20);
+      EEPROM.put(addr,data);
+      EEPROM.commit();
+      EEPROM.get(addr,data);
 
+      switchpassword = data.switchPassword;
+      String emailText = "New Switch password is: " + switchpassword + "<br>" + getStartupEmailString();
+      gsender->Subject(espname + " New switch password")->Send(emailSendTo, emailText);
+
+      Serial.println("6. New values are: "+String(data.ESPHostname)+", "+String(data.ssid)+", "+String(data.wifiPassword)+", "+String(data.switchPassword));
+      server.send ( 200, "text/plain", "New switchPassword is " + newSwitchPassword + ". Takes immediate effect. No restart necessary.");
+    }
+  });
+ 
+  server.on("/emailSwitchPassword", HTTP_GET, []() {
+    switchpassword = data.switchPassword;
+    String emailText = "New Switch password is: " + switchpassword + "<br>" + getStartupEmailString();
+    gsender->Subject(espname + " New switch password")->Send(emailSendTo, emailText);
+    server.send ( 200, "text/plain", "The switch password has been emailed to you");
+  });
+ 
   //here the list of headers to be recorded
   const char * headerkeys[] = {"User-Agent", "secret", "X-Forwarded-For", "host"} ;
   size_t headerkeyssize = sizeof(headerkeys)/sizeof(char*);
@@ -171,43 +260,12 @@ void setup(void){
   ArduinoOTA.begin();
  
   // ----------- OTA Stuff End -----------------//
-
-  String emailString;
-  emailString = "Startup Complete for "+espname+"<BR>";
-
-  emailString += "<hr><h3>Useful URLs</h3>";
-  emailString += "Accessible (.lan) at <A HREF=http://"+espname+".lan>Home Page</A><BR>";
-  emailString += "or (.local), at <A HREF=http://"+espname+".local>Home Page</A><BR>";
-  emailString += "Connected to " + WiFi.SSID() + "<BR>";
-  emailString += "<A HREF=http://" + WiFi.localIP().toString() + ">http://" + WiFi.localIP().toString() + "</A><BR>";
-
-  emailString += "<hr><h3>Switch 0</h3>";
-  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+espname+".lan/Led_On<BR>";
-  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+espname+".lan/Led_Off<BR>";
-  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+espname+".lan/Led_Status<BR>";
-  
-  emailString += "<hr><h3>Switch 2</h3>";
-  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+espname+".lan/Switch_On<BR>";
-  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+espname+".lan/Switch_Off<BR>";
-  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+espname+".lan/Switch_Status<BR>";
-
-  emailString += "<hr><h3>To restart</h3>";
-  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+espname+".lan/restart<BR>";
-  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+espname+".local/restart<BR>";
-  emailString += "Setting current state to " + String(OFF_STATE) + "<BR>";
-
-  emailString += "<hr>";
-  int n = WiFi.scanNetworks();
-  emailString += "<h3>WiFi Available in your area</h3>";
-  for (int i = 0; i < n; ++i)
-  { // Print SSID and RSSI for each network found Serial.print(i + 1);
-    emailString += String(i) + ". " + WiFi.SSID(i) + ":" + WiFi.encryptionType(i) + "<BR>";
-  }
+ 
   digitalWrite(RELAY_PIN, OFF_STATE);
   digitalWrite(LED_PIN, OFF_STATE);
   upSince = getTime();
 
-  if(gsender->Subject(espname + " Started")->Send(emailSendTo, emailString)) {
+  if(gsender->Subject(espname + " Started")->Send(emailSendTo, getStartupEmailString())) {
     char data[50];
     sprintf(data, "Message sent to %s", emailSendTo);
     Serial.println(data);
@@ -348,3 +406,86 @@ String getTime() {
   http.end();
   return String(dateAndTimeCharArray);
 }
+
+void initializeEeprom()
+{
+//  if (!isAscii(EEPROM.read(0))) {
+    Serial.println("Initializing..");
+    for(int i=0; i<=510; i++)
+    {
+      EEPROM.write(i,'\0');
+      Serial.println(EEPROM.read(i));
+    }
+    Serial.print(EEPROM.commit());
+    Serial.println("   1=Success 0=Fail");
+//  }
+}
+
+boolean isDataValid(String i)
+{
+  Serial.print("Size of string being validated is ");
+  Serial.println(i.length());
+  if (i.length() == 0) {
+    Serial.println("Size of string is 0, Invalid");
+    Serial.println("");
+    return false;
+  }
+  for(int t=0; t < i.length(); t++)
+  {
+    char k = i[t];
+    Serial.print(t);
+    Serial.print(" : ");
+    Serial.print(k);
+    Serial.print(" > ");
+    int r = i[t];
+    Serial.println(r);
+    if ((r <=32) || (r >= 127)) {
+      Serial.println("At least one non ASCII, Invalid");
+      Serial.println("");
+      return false;
+    }
+  }
+  Serial.println("All non ASCII, valid");
+  Serial.println("");
+  return true;
+}
+
+String getStartupEmailString() {
+  emailString = "Startup Complete for "+espname+"<BR>";
+
+  emailString += "<hr><h3>Useful URLs</h3>";
+  emailString += "Accessible (.lan) at <A HREF=http://"+espname+".lan>Home Page</A><BR>";
+  emailString += "or (.local), at <A HREF=http://"+espname+".local>Home Page</A><BR>";
+  emailString += "Connected to " + WiFi.SSID() + "<BR>";
+  emailString += "<A HREF=http://" + WiFi.localIP().toString() + ">http://" + WiFi.localIP().toString() + "</A><BR>";
+
+  emailString += "<hr><h3>Switch 0</h3>";
+  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+espname+".lan/Led_On<BR>";
+  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+espname+".lan/Led_Off<BR>";
+  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+espname+".lan/Led_Status<BR>";
+  
+  emailString += "<hr><h3>Switch 2</h3>";
+  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+espname+".lan/Switch_On<BR>";
+  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+espname+".lan/Switch_Off<BR>";
+  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+espname+".lan/Switch_Status<BR>";
+
+  emailString += "<hr><h3>Utility URLs. Do NOT access these from internet</h3>";
+  emailString += "curl                                   -X GET  http://"+espname+".lan/emailSwitchPassword<BR>";
+  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+espname+".lan/ChangeHostname?hostname=MyNewHostName<BR>";
+  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+espname+".lan/ChangeSwitchPassword?switchPassword=myNewPassword<BR>";
+
+  emailString += "<hr><h3>To restart</h3>";
+  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+espname+".lan/restart<BR>";
+  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+espname+".local/restart<BR>";
+  emailString += "Setting current state of the switch to " + String(OFF_STATE) + "<BR>";
+
+  emailString += "<hr>";
+  int n = WiFi.scanNetworks();
+  emailString += "<h3>WiFi Available in your area</h3>";
+  for (int i = 0; i < n; ++i)
+  { // Print SSID and RSSI for each network found Serial.print(i + 1);
+    emailString += String(i) + ". " + WiFi.SSID(i) + ":" + WiFi.encryptionType(i) + "<BR>";
+  }
+  return emailString;
+}
+

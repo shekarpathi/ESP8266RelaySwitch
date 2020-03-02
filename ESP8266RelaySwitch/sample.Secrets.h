@@ -10,5 +10,5 @@
   const char * WiFiPWD3="RobinHood3";
   const char * WiFiSID4="SID4";
   const char * WiFiPWD4="RobinHood4";
-  const char * emailSendTo="test@test.com"
+  char * emailSendTo="test@test.com"
 #endif

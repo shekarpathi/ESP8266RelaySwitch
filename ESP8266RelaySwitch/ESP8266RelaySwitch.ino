@@ -131,6 +131,7 @@ void setup(void){
     if (authenticated("/restart")) {
       sendEmail("Authenticated. Restarting " + espname, "Restarting " + espname + " ESP");
       server.send ( 200, "text/html", espname + " ESP is restarting");
+      delay(3000);
       ESP.restart();
     }
   });
@@ -219,7 +220,7 @@ void setup(void){
   server.on("/emailSwitchPassword", HTTP_GET, []() {
     switchpassword = data.switchPassword;
     String emailText = "New Switch password is: " + switchpassword + "<br>" + getStartupEmailString();
-    gsender->Subject(espname + " New switch password")->Send(emailSendTo, emailText);
+    gsender->Subject(espname + " current switch password")->Send(emailSendTo, emailText);
     server.send ( 200, "text/plain", "The switch password has been emailed to you");
   });
  
@@ -260,8 +261,8 @@ void setup(void){
   ArduinoOTA.begin();
  
   // ----------- OTA Stuff End -----------------//
- 
-  digitalWrite(RELAY_PIN, OFF_STATE);
+  // Switch OFF  Plug ON
+  digitalWrite(RELAY_PIN, OFF_STATE); // ON_STATE for plug and OFF_STATE for switch. Plugs have to be wired in series and switches in parallel
   digitalWrite(LED_PIN, OFF_STATE);
   upSince = getTime();
 
@@ -287,8 +288,10 @@ void loop(void){
     emailContent = "";
   }
   // 5 Restart at fixed intervals
+  // Comment the next section for 3-way switch configuration
   if(millis() - previousMillis > interval) {
     sendEmail("Restarting based on internal timer. " + espname, "Restarting " + espname + " ESP");
+    delay(10000);
     ESP.restart();
   }
 }

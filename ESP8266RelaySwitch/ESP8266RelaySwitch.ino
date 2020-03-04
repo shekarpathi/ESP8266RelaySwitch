@@ -289,11 +289,12 @@ void loop(void){
   }
   // 5 Restart at fixed intervals
   // Comment the next section for 3-way switch configuration
-  if(millis() - previousMillis > interval) {
-    sendEmail("Restarting based on internal timer. " + espname, "Restarting " + espname + " ESP");
-    delay(10000);
-    ESP.restart();
-  }
+  // or comment the next section of you don't want restarts
+//  if(millis() - previousMillis > interval) {
+//    sendEmail("Restarting based on internal timer. " + espname, "Restarting " + espname + " ESP");
+//    delay(10000);
+//    ESP.restart();
+//  }
 }
 
 boolean authenticated(String path) {
@@ -385,7 +386,7 @@ String getTime() {
 
       // Test if parsing succeeds.
       if (error) {
-        Serial.print(F("deserializeJson() failed: "));
+        Serial.print("deserializeJson() failed: ");
         Serial.println(error.c_str());
         return "error";
       }

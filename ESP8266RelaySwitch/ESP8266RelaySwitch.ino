@@ -261,7 +261,8 @@ void setup(void){
   ArduinoOTA.begin();
  
   // ----------- OTA Stuff End -----------------//
-  // Switch OFF  Plug ON
+  // If you are wiring a switch in paralled set it to OFF_STATE
+  // If you are wiring a plug in series set it to ON_STATE
   digitalWrite(RELAY_PIN, OFF_STATE); // ON_STATE for plug and OFF_STATE for switch. Plugs have to be wired in series and switches in parallel
   digitalWrite(LED_PIN, OFF_STATE);
   upSince = getTime();

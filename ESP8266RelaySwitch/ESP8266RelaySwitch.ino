@@ -239,6 +239,7 @@ void setup(void){
 
   MDNS.addService("http", "tcp", 80);
 
+  // ----------- OTA Stuff Begin -----------------//
   ArduinoOTA.onStart([]() {
     String type;
     if (ArduinoOTA.getCommand() == U_FLASH)
@@ -264,12 +265,15 @@ void setup(void){
   });
   ArduinoOTA.setHostname(espname.c_str());
   ArduinoOTA.begin();
- 
   // ----------- OTA Stuff End -----------------//
-  // If you are wiring a switch in paralled set it to OFF_STATE
+
+  
+  // If you are wiring a switch in parallel set it to OFF_STATE
   // If you are wiring a plug in series set it to ON_STATE
   digitalWrite(RELAY_PIN, ON_STATE); // ON_STATE for plug and OFF_STATE for switch. Plugs have to be wired in series and switches in parallel
   digitalWrite(LED_PIN, ON_STATE);
+  
+  
   upSince = getTime();
 
   if(gsender->Subject(espname + " Started")->Send(emailSendTo, getStartupEmailString())) {

@@ -71,21 +71,26 @@ void setup(void){
   // 2#) Check if they are valid
   //     If not, read from the secrets file and save them back to EEPROM
   if (!isDataValid(data.ESPHostname)) {
+    Serial.println("EEPROM data.ESPHostname: "+String(data.ESPHostname)+" is not valid. Copying from secrets.h");
     strncpy(data.ESPHostname, espname.c_str(), 20);
   }
   if (!isDataValid(data.ssid)) {
+    Serial.println("EEPROM data.ssid: "+String(data.ssid)+" is not valid. Copying from secrets.h");
     strncpy(data.ssid, WiFiSID1, 20);
   }
   if (!isDataValid(data.wifiPassword)) {
+    Serial.println("EEPROM data.wifiPassword: "+String(data.wifiPassword)+" is not valid. Copying from secrets.h");
     strncpy(data.wifiPassword, WiFiPWD1, 40);
   }
   if (!isDataValid(data.switchPassword)) {
+    Serial.println("EEPROM data.switchPassword: "+String(data.switchPassword)+" is not valid. Copying from secrets.h");
     strncpy(data.switchPassword, switchpassword.c_str(), 40);
   }
+  Serial.println("1. New values are: "+String(data.ESPHostname)+", "+String(data.ssid)+", "+String(data.wifiPassword)+", "+String(data.switchPassword));
   EEPROM.put(addr,data);
   EEPROM.commit();
   EEPROM.get(addr,data);
-  Serial.println("New values are: "+String(data.ESPHostname)+", "+String(data.ssid)+", "+String(data.wifiPassword)+", "+String(data.switchPassword));
+  Serial.println("2. New values are: "+String(data.ESPHostname)+", "+String(data.ssid)+", "+String(data.wifiPassword)+", "+String(data.switchPassword));
 
   // 3#) Write the values back from the structure/EEPROM to the ESP8266's memory
   // EEPROM contains the authoratitive data.  EEPROM and the memory variables will be in sync after this
@@ -196,8 +201,8 @@ void setup(void){
     }
   });
  
-  server.on("/ChangeSwitchPassword", HTTP_GET, []() {
-    if (authenticated("/ChangeSwitchPassword")) {
+  server.on("/SetSwitchPassword", HTTP_GET, []() {
+    if (authenticated("/SetSwitchPassword")) {
       String newSwitchPassword = server.arg("switchPassword"); 
       Serial.println("newSwitchPassword="+newSwitchPassword);
       EEPROM.begin(512); // Menu -> Tools -> Erase Flash is set to "Sketch Only"
@@ -263,8 +268,8 @@ void setup(void){
   // ----------- OTA Stuff End -----------------//
   // If you are wiring a switch in paralled set it to OFF_STATE
   // If you are wiring a plug in series set it to ON_STATE
-  digitalWrite(RELAY_PIN, OFF_STATE); // ON_STATE for plug and OFF_STATE for switch. Plugs have to be wired in series and switches in parallel
-  digitalWrite(LED_PIN, OFF_STATE);
+  digitalWrite(RELAY_PIN, ON_STATE); // ON_STATE for plug and OFF_STATE for switch. Plugs have to be wired in series and switches in parallel
+  digitalWrite(LED_PIN, ON_STATE);
   upSince = getTime();
 
   if(gsender->Subject(espname + " Started")->Send(emailSendTo, getStartupEmailString())) {
@@ -456,32 +461,51 @@ boolean isDataValid(String i)
 }
 
 String getStartupEmailString() {
-  emailString = "Startup Complete for "+espname+"<BR>";
+  emailString = "<H2>Startup Complete for "+espname+"</H2><BR>";
 
   emailString += "<hr><h3>Useful URLs</h3>";
-  emailString += "Accessible (.lan) at <A HREF=http://"+espname+".lan>Home Page</A><BR>";
-  emailString += "or (.local), at <A HREF=http://"+espname+".local>Home Page</A><BR>";
-  emailString += "Connected to " + WiFi.SSID() + "<BR>";
+  emailString += "Accessible via<BR>";
+  emailString += "(.lan)   at <A HREF=http://"+espname+".lan>Home Page</A><BR>";
+  emailString += "(.local) at <A HREF=http://"+espname+".local>Home Page</A><BR>";
   emailString += "<A HREF=http://" + WiFi.localIP().toString() + ">http://" + WiFi.localIP().toString() + "</A><BR>";
+  emailString += "Connected to SID " + WiFi.SSID() + "<BR>";
 
-  emailString += "<hr><h3>Switch 0</h3>";
+  emailString += "<hr><h3>Switch 0 Built in LED</h3>";
+  emailString += "<h4>Using DNS names .lan</h4>";
   emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+espname+".lan/Led_On<BR>";
   emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+espname+".lan/Led_Off<BR>";
   emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+espname+".lan/Led_Status<BR>";
+  emailString += "<h4>Using IP</h4>";
+  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+WiFi.localIP().toString()+"/Led_On<BR>";
+  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+WiFi.localIP().toString()+"/Led_Off<BR>";
+  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+WiFi.localIP().toString()+"/Led_Status<BR>";
   
-  emailString += "<hr><h3>Switch 2</h3>";
+  emailString += "<hr><h3>Switch 2 Connected to the relay</h3>";
+  emailString += "<h4>Using DNS names .lan</h4>";
   emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+espname+".lan/Switch_On<BR>";
   emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+espname+".lan/Switch_Off<BR>";
-  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+espname+".lan/Switch_Status<BR>";
+  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+espname+".lan/Switch_Status<BR>";
+  emailString += "<h4>Using IP</h4>";
+  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+WiFi.localIP().toString()+"/Switch_On<BR>";
+  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+WiFi.localIP().toString()+"/Switch_Off<BR>";
+  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+WiFi.localIP().toString()+"/Switch_Status<BR>";
 
   emailString += "<hr><h3>Utility URLs. Do NOT access these from internet</h3>";
+  emailString += "<h4>Using DNS names .lan</h4>";
   emailString += "curl                                   -X GET  http://"+espname+".lan/emailSwitchPassword<BR>";
   emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+espname+".lan/ChangeHostname?hostname=MyNewHostName<BR>";
-  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+espname+".lan/ChangeSwitchPassword?switchPassword=myNewPassword<BR>";
+  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+espname+".lan/SetSwitchPassword?switchPassword=<i>myNewPassword</i><BR>";
+  emailString += "<h4>Using IP Address</h4>";
+  emailString += "curl                                   -X GET  http://"+WiFi.localIP().toString()+"/emailSwitchPassword<BR>";
+  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+WiFi.localIP().toString()+"/ChangeHostname?hostname=MyNewHostName<BR>";
+  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+WiFi.localIP().toString()+"/SetSwitchPassword?switchPassword=<i>myNewPassword</i><BR>";
 
   emailString += "<hr><h3>To restart</h3>";
+  emailString += "<h4>.local  .lan  IP Address</h4>";
   emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+espname+".lan/restart<BR>";
   emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+espname+".local/restart<BR>";
+  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+WiFi.localIP().toString()+"/restart<BR>";
+  emailString += "<h4>Default Switch State</h4>";
   emailString += "Setting current state of the switch to " + String(OFF_STATE) + "<BR>";
 
   emailString += "<hr>";

@@ -7,4 +7,4 @@ This solves most of the commonly faced issues
 2. hostname not being recognized on the router
 3. ota not working
 
-![OnlySketch](https://user-images.githubusercontent.com/25843597/75548128-7e119900-59fa-11ea-8256-3120c2915bf3.png)
+![OnlySketch](https://user-images.githubusercontent.com/25843597/75938762-91878e80-5e56-11ea-8dbd-adefeb12d703.png)

@@ -12,7 +12,16 @@
 //  https://tttapa.github.io/ESP8266/Chap11%20-%20SPIFFS.html
 //  ArduinoJson Libraries needed - should be installed separately
 //  Gsender library included in this repo - no download needed
-//  python.exe C:\Users\username\AppData\Local\Arduino15\packages\esp8266\hardware\esp8266\2.4.2/tools/espota.py -i 192.168.5.162 -p 8266 --auth= -f C:\Users\username\AppData\Local\Temp\arduino_build_849613/ESP8266RelaySwitch.ino.bin 
+//  C:\dddd\vvv\Python.exe C:\Users\username\AppData\Local\Arduino15\packages\esp8266\hardware\esp8266\2.4.2/tools/espota.py -i 192.168.5.162 -p 8266 --auth= -f C:\Users\username\AppData\Local\Temp\arduino_build_849613/ESP8266RelaySwitch.ino.bin 
+//  If OTA port does not show up or
+//  If OTA port shows up but does not upload do these following
+//  These apply only to windows / 10
+//  (1.) Disable IPV6 for all network adapters
+//  (2.) Exit IDE
+//  (3.) Disable and Enable all Network adapters
+//  (4.) Relaunch IDE
+//  Also in Windows firewall (5.) Set a new rule for INBOUND firewall for "C:\dddd\vvv\Python.exe"
+//  Do these and it is guaranteed to work
 
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
@@ -140,19 +149,19 @@ void setup(void){
       ESP.restart();
     }
   });
-  
+
   server.on("/printRequestHeaders" , HTTP_GET, printRequestHeaders);
 
   server.on("/Led_On", HTTP_GET, []() {
     if (authenticated("/Led_On")) {
-      digitalWrite(LED_PIN, ON_STATE);
+      digitalWrite(LED_PIN, 0);
       server.send ( 200, "text/plain", "1");
     }
   });
   
   server.on("/Led_Off", HTTP_GET, []() {
     if (authenticated("/Led_Off")) {
-      digitalWrite(LED_PIN, OFF_STATE);
+      digitalWrite(LED_PIN, 1);
       server.send ( 200, "text/plain", "0");
     }
   });
@@ -178,10 +187,14 @@ void setup(void){
   });
   
   server.on("/Switch_Status", HTTP_GET, []() {
-    if (authenticated("/Switch_Status")) {
+ //   if (authenticated("/Switch_Status")) {
       server.send ( 200, "text/plain", String(digitalRead(RELAY_PIN)));
-    }
+//    }
   });
+ 
+  server.on("/Switch_On", HTTP_OPTIONS, sendCORSHeaders);
+  server.on("/Switch_Off", HTTP_OPTIONS, sendCORSHeaders);
+  server.on("/Switch_Status", HTTP_OPTIONS, sendCORSHeaders);
  
   server.on("/ChangeHostname", HTTP_GET, []() {
     if (authenticated("/ChangeHostname")) {
@@ -201,24 +214,27 @@ void setup(void){
     }
   });
  
-  server.on("/SetSwitchPassword", HTTP_GET, []() {
+  server.on("/SetSwitchPassword", HTTP_POST, []() {
     if (authenticated("/SetSwitchPassword")) {
-      String newSwitchPassword = server.arg("switchPassword"); 
-      Serial.println("newSwitchPassword="+newSwitchPassword);
-      EEPROM.begin(512); // Menu -> Tools -> Erase Flash is set to "Sketch Only"
-      EEPROM.get(addr,data);
-      Serial.println("5. Old values are: "+String(data.ESPHostname)+", "+String(data.ssid)+", "+String(data.wifiPassword)+", "+String(data.switchPassword));
-      strncpy(data.switchPassword, newSwitchPassword.c_str(), 20);
-      EEPROM.put(addr,data);
-      EEPROM.commit();
-      EEPROM.get(addr,data);
-
-      switchpassword = data.switchPassword;
-      String emailText = "New Switch password is: " + switchpassword + "<br>" + getStartupEmailString();
-      gsender->Subject(espname + " New switch password")->Send(emailSendTo, emailText);
-
-      Serial.println("6. New values are: "+String(data.ESPHostname)+", "+String(data.ssid)+", "+String(data.wifiPassword)+", "+String(data.switchPassword));
-      server.send ( 200, "text/plain", "New switchPassword is " + newSwitchPassword + ". Takes immediate effect. No restart necessary.");
+      if (server.hasHeader("newSwitchPassword")) {
+        String newSwitchPassword = server.header("newSwitchPassword");
+        Serial.println("newSwitchPassword passed in header="+newSwitchPassword);
+        EEPROM.begin(512);
+        EEPROM.get(addr,data);
+        Serial.println("6. Old values are: "+String(data.ESPHostname)+", "+String(data.ssid)+", "+String(data.wifiPassword)+", "+String(data.switchPassword));
+        strncpy(data.switchPassword, newSwitchPassword.c_str(), 20);
+        EEPROM.put(addr,data);
+        EEPROM.commit();
+        EEPROM.get(addr,data);
+        Serial.println("7. New values are: "+String(data.ESPHostname)+", "+String(data.ssid)+", "+String(data.wifiPassword)+", "+String(data.switchPassword));
+        switchpassword = data.switchPassword;
+        String emailText = "New Switch password is: " + switchpassword + "<br>" + getStartupEmailString();
+        gsender->Subject(espname + " New switch password")->Send(emailSendTo, emailText);
+        server.send ( 200, "text/plain", "New switchPassword is " + newSwitchPassword + ". Takes immediate effect. No restart necessary.");
+      } else {
+        String emailText = "SetSwitchPassword requested without newSwitchPassword header<br>";
+        gsender->Subject(espname + " no newSwitchPassword header")->Send(emailSendTo, emailText);
+      }
     }
   });
  
@@ -230,7 +246,7 @@ void setup(void){
   });
  
   //here the list of headers to be recorded
-  const char * headerkeys[] = {"User-Agent", "secret", "X-Forwarded-For", "host"} ;
+  const char * headerkeys[] = {"User-Agent", "secret", "X-Forwarded-For", "host", "newSwitchPassword"} ;
   size_t headerkeyssize = sizeof(headerkeys)/sizeof(char*);
   server.collectHeaders(headerkeys, headerkeyssize );
   
@@ -267,13 +283,25 @@ void setup(void){
   ArduinoOTA.begin();
   // ----------- OTA Stuff End -----------------//
 
-  
-  // If you are wiring a switch in parallel set it to OFF_STATE
-  // If you are wiring a plug in series set it to ON_STATE
-  digitalWrite(RELAY_PIN, ON_STATE); // ON_STATE for plug and OFF_STATE for switch. Plugs have to be wired in series and switches in parallel
+  // Set the defaults to ON_STATE and override them based on the type of connection this is used for
+  // ON_STATE for plug and OFF_STATE for switch.
+  digitalWrite(RELAY_PIN, ON_STATE);
   digitalWrite(LED_PIN, ON_STATE);
-  
-  
+
+  // Plugs have to be wired in series and switches in parallel
+  if (espname.indexOf("Switch") > 0) {
+    Serial.println("This is a switch");
+    // If you are wiring a switch in parallel set it to OFF_STATE
+    digitalWrite(RELAY_PIN, OFF_STATE);
+    digitalWrite(LED_PIN, OFF_STATE);
+  }
+  if (espname.indexOf("Plug") > 0) {
+    Serial.println("This is a Plug");
+    // If you are wiring a plug in series set it to ON_STATE
+    digitalWrite(RELAY_PIN, ON_STATE);
+    digitalWrite(LED_PIN, ON_STATE);
+  }
+
   upSince = getTime();
 
   if(gsender->Subject(espname + " Started")->Send(emailSendTo, getStartupEmailString())) {
@@ -310,9 +338,15 @@ void loop(void){
 boolean authenticated(String path) {
   if (server.hasHeader("secret")) { // request HAS secret header
     if (server.header("secret") == switchpassword) {
-      emailSubject = "Authenticated " + path + " on " + espname + " Accessed";
-      emailContent = getXFFIP();
-      return true;
+      
+      if (path.indexOf("Switch_Status") <= 0) {
+        emailSubject = "Authenticated " + path + " on " + espname + " Accessed";
+        emailContent = getXFFIP();
+      } else {  // path contains Switch_Status - Don't send unncessary emails
+        emailSubject = "";
+        emailContent = "";
+      }
+      return true; // authenticated
     }
     else {  // invalid password
       emailSubject = "Invalid secret header value provided on " + path + " on " + espname;
@@ -374,14 +408,16 @@ String getTime() {
   const char* datetime;
   char dateAndTimeCharArray[50];
   HTTPClient http;
-  http.setTimeout(5000);
+  http.setTimeout(10000);
+  
   http.begin("http://worldtimeapi.org/api/ip");
   int httpCode = http.GET();
-  Serial.print("1... httpCode:");
+  Serial.print("1...worldtimeapi.org -> httpCode:");
   Serial.println(httpCode);
   int lenghtOfResponse = http.getSize();
-  Serial.println("3... lenghtOfResponse:");
+  Serial.print("2...worldtimeapi.org -> lenghtOfResponse:");
   Serial.println(lenghtOfResponse);
+
   if (httpCode > 0) {
     if (httpCode == HTTP_CODE_OK) {
       String jsonTimeResponse = http.getString();
@@ -497,12 +533,12 @@ String getStartupEmailString() {
   emailString += "<hr><h3>Utility URLs. Do NOT access these from internet</h3>";
   emailString += "<h4>Using DNS names .lan</h4>";
   emailString += "curl                                   -X GET  http://"+espname+".lan/emailSwitchPassword<BR>";
-  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+espname+".lan/ChangeHostname?hostname=MyNewHostName<BR>";
-  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+espname+".lan/SetSwitchPassword?switchPassword=<i>myNewPassword</i><BR>";
+  emailString += "curl -H \"secret: " + switchpassword + "\" -X GET  http://"+espname+".lan/ChangeHostname?hostname=MyNewHostName<BR>";
+  emailString += "curl -H \"secret: " + switchpassword + "\" -H \"newSwitchPassword: <b>newSwitchPassword</b>\" -X POST http://"+espname+".lan/SetSwitchPassword<BR>";
   emailString += "<h4>Using IP Address</h4>";
   emailString += "curl                                   -X GET  http://"+WiFi.localIP().toString()+"/emailSwitchPassword<BR>";
-  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+WiFi.localIP().toString()+"/ChangeHostname?hostname=MyNewHostName<BR>";
-  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+WiFi.localIP().toString()+"/SetSwitchPassword?switchPassword=<i>myNewPassword</i><BR>";
+  emailString += "curl -H \"secret: " + switchpassword + "\" -X GET  http://"+WiFi.localIP().toString()+"/ChangeHostname?hostname=MyNewHostName<BR>";
+  emailString += "curl -H \"secret: " + switchpassword + "\" -H \"newSwitchPassword: <b>newSwitchPassword</b>\" -X POST  http://"+WiFi.localIP().toString()+"/SetSwitchPassword<BR>";
 
   emailString += "<hr><h3>To restart</h3>";
   emailString += "<h4>.local  .lan  IP Address</h4>";
@@ -520,5 +556,13 @@ String getStartupEmailString() {
     emailString += String(i) + ". " + WiFi.SSID(i) + ":" + WiFi.encryptionType(i) + "<BR>";
   }
   return emailString;
+}
+
+void sendCORSHeaders(){
+  server.sendHeader("Access-Control-Allow-Headers", "User-Agent, secret, X-Forwarded-For, host, newSwitchPassword");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS, POST");
+  server.sendHeader("Access-Control-Allow-Origin", "null");
+  server.sendHeader("Access-Control-Max-Age", "60000");
+  server.send(204);
 }
 

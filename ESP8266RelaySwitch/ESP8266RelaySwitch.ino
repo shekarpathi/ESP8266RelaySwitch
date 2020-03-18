@@ -187,9 +187,9 @@ void setup(void){
   });
   
   server.on("/Switch_Status", HTTP_GET, []() {
- //   if (authenticated("/Switch_Status")) {
+    if (authenticated("/Switch_Status")) {
       server.send ( 200, "text/plain", String(digitalRead(RELAY_PIN)));
-//    }
+    }
   });
  
   server.on("/Switch_On", HTTP_OPTIONS, sendCORSHeaders);

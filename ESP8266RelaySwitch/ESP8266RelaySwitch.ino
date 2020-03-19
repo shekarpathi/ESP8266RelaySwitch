@@ -11,7 +11,7 @@
 //  https://ubidots.com/blog/connect-your-esp8266-to-any-available-wi-fi-network/
 //  https://tttapa.github.io/ESP8266/Chap11%20-%20SPIFFS.html
 //  ArduinoJson Libraries needed - should be installed separately
-//  Gsender library included in this repo - no download needed
+//  Gsender library included in this repo - no download needed - Works ONLY with BoardManager ESP8266 4.2.6  DO NOT CHANGE IT TO ANYTHING ELSE
 //  C:\dddd\vvv\Python.exe C:\Users\username\AppData\Local\Arduino15\packages\esp8266\hardware\esp8266\2.4.2/tools/espota.py -i 192.168.5.162 -p 8266 --auth= -f C:\Users\username\AppData\Local\Temp\arduino_build_849613/ESP8266RelaySwitch.ino.bin 
 //  If OTA port does not show up or
 //  If OTA port shows up but does not upload do these following

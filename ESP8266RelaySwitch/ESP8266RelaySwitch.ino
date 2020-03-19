@@ -341,7 +341,7 @@ boolean authenticated(String path) {
       if (path.indexOf("Status") <= 0) {
         emailSubject = "Authenticated " + path + " on " + espname + " Accessed";
         emailContent = getXFFIP();
-      } else {  // path contains Switch_Status - Don't send unncessary emails
+      } else {  // path contains Status - Don't send unncessary emails
         emailSubject = "";
         emailContent = "";
       }

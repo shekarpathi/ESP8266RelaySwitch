@@ -338,8 +338,7 @@ void loop(void){
 boolean authenticated(String path) {
   if (server.hasHeader("secret")) { // request HAS secret header
     if (server.header("secret") == switchpassword) {
-      
-      if (path.indexOf("Switch_Status") <= 0) {
+      if (path.indexOf("Status") <= 0) {
         emailSubject = "Authenticated " + path + " on " + espname + " Accessed";
         emailContent = getXFFIP();
       } else {  // path contains Switch_Status - Don't send unncessary emails

@@ -11,4 +11,6 @@
   const char * WiFiSID4="SID4";
   const char * WiFiPWD4="RobinHood4";
   char * emailSendTo="test@test.com"
+  const char* EMAIL_FROM="foo.bar@hotmail.com";
+  const char* EMAIL_PASSWORD="thisisnotmypassword";
 #endif

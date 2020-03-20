@@ -11,8 +11,25 @@
 //  https://ubidots.com/blog/connect-your-esp8266-to-any-available-wi-fi-network/
 //  https://tttapa.github.io/ESP8266/Chap11%20-%20SPIFFS.html
 //  ArduinoJson Libraries needed - should be installed separately
-//  Gsender library included in this repo - no download needed - Works ONLY with BoardManager ESP8266 4.2.6  DO NOT CHANGE IT TO ANYTHING ELSE
-//  C:\dddd\vvv\Python.exe C:\Users\username\AppData\Local\Arduino15\packages\esp8266\hardware\esp8266\2.4.2/tools/espota.py -i 192.168.5.162 -p 8266 --auth= -f C:\Users\username\AppData\Local\Temp\arduino_build_849613/ESP8266RelaySwitch.ino.bin 
+
+// --------------------------------------------------------------------------------------
+// REM OTA flash from the windows command line
+// REM 1. Make sure you enable and disable network and wifi adapters before this
+// REM 2. Make sure your WINDOWS INBOUND firewall rules allow python3
+
+// set FILE=C:\Users\LoggedInUser\Documents\ESP8266RelaySwitch.ino.bin
+
+// copy /B /Y C:\Users\LoggedInUser\AppData\Local\Temp\arduino_build_nnnnnn\ESP8266RelaySwitch.ino.bin %FILE%
+
+// set PYEXE=C:\Users\LoggedInUser\AppData\Local\Arduino15\packages\esp8266\tools\python3\3.7.2-post1\python3
+// set PY=C:\Users\LoggedInUser\AppData\Local\Arduino15\packages\esp8266\hardware\esp8266\2.6.3\tools\espota.py
+
+// %PYEXE% %PY% -i Plug1.lan   -p 8266 --auth= -f %FILE%
+// %PYEXE% %PY% -i Plug2.lan   -p 8266 --auth= -f %FILE%
+// %PYEXE% %PY% -i Switch1.lan -p 8266 --auth= -f %FILE%
+// %PYEXE% %PY% -i Switch2.lan -p 8266 --auth= -f %FILE%
+// --------------------------------------------------------------------------------------
+
 //  If OTA port does not show up or
 //  If OTA port shows up but does not upload do these following
 //  These apply only to windows / 10
@@ -26,7 +43,6 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
 #include <ESP8266WebServer.h>   // Include the WebServer library
-#include "GmailSender.h"
 #include <ArduinoOTA.h>
 #include <ArduinoJson.h>
 #include <ESP8266HTTPClient.h>
@@ -34,9 +50,10 @@
 #define USE_SERIAL Serial
 #include "Secrets.h"
 #include <EEPROM.h>
+#include "EMailSender.h"
 
 ESP8266WebServer server(80);            // Create a webserver object that listens for HTTP request on port 80
-Gsender *gsender = Gsender::Instance(); // Getting pointer to class instance
+EMailSender emailSend(EMAIL_FROM, EMAIL_PASSWORD);
 
 const int ON_STATE = 1;
 const int OFF_STATE = 0;
@@ -136,7 +153,7 @@ void setup(void){
   } else {
     Serial.println("Error setting up MDNS responder for " + espname);
   }
- 
+
   server.on("/"                    , HTTP_GET, []() {
     server.send (200, "text/HTML", "<p><font size=\"10\">Your IP: " + getXFFIP() + "<BR>" + "Up since: " + upSince + "<BR>Current time:"+getTime() + "</font></p>");
   });
@@ -229,11 +246,27 @@ void setup(void){
         Serial.println("7. New values are: "+String(data.ESPHostname)+", "+String(data.ssid)+", "+String(data.wifiPassword)+", "+String(data.switchPassword));
         switchpassword = data.switchPassword;
         String emailText = "New Switch password is: " + switchpassword + "<br>" + getStartupEmailString();
-        gsender->Subject(espname + " New switch password")->Send(emailSendTo, emailText);
+
+        EMailSender::EMailMessage message;
+        message.subject = espname + " New switch password";
+        message.message = emailText;
+        EMailSender::Response resp = emailSend.send("shekar@yahoo.com", message);
+        Serial.println("Sending status: ");
+        Serial.println(resp.status);
+        Serial.println(resp.code);
+        Serial.println(resp.desc);
         server.send ( 200, "text/plain", "New switchPassword is " + newSwitchPassword + ". Takes immediate effect. No restart necessary.");
       } else {
         String emailText = "SetSwitchPassword requested without newSwitchPassword header<br>";
-        gsender->Subject(espname + " no newSwitchPassword header")->Send(emailSendTo, emailText);
+
+        EMailSender::EMailMessage message;
+        message.subject = espname + " no newSwitchPassword header";
+        message.message = emailText;
+        EMailSender::Response resp = emailSend.send("shekar@yahoo.com", message);
+        Serial.println("Sending status: ");
+        Serial.println(resp.status);
+        Serial.println(resp.code);
+        Serial.println(resp.desc);
       }
     }
   });
@@ -241,7 +274,15 @@ void setup(void){
   server.on("/emailSwitchPassword", HTTP_GET, []() {
     switchpassword = data.switchPassword;
     String emailText = "New Switch password is: " + switchpassword + "<br>" + getStartupEmailString();
-    gsender->Subject(espname + " current switch password")->Send(emailSendTo, emailText);
+
+    EMailSender::EMailMessage message;
+    message.subject = espname + " current switch password";
+    message.message = emailText;
+    EMailSender::Response resp = emailSend.send("shekar@yahoo.com", message);
+    Serial.println("Sending status: ");
+    Serial.println(resp.status);
+    Serial.println(resp.code);
+    Serial.println(resp.desc);
     server.send ( 200, "text/plain", "The switch password has been emailed to you");
   });
  
@@ -304,11 +345,15 @@ void setup(void){
 
   upSince = getTime();
 
-  if(gsender->Subject(espname + " Started")->Send(emailSendTo, getStartupEmailString())) {
-    char data[50];
-    sprintf(data, "Message sent to %s", emailSendTo);
-    Serial.println(data);
-  }
+  EMailSender::EMailMessage message;
+  message.subject = espname + " Started";
+  message.message = getStartupEmailString();
+  EMailSender::Response resp = emailSend.send("shekar@yahoo.com", message);
+  Serial.println("Sending status: ");
+  Serial.println(message.message);
+  Serial.println(resp.status);
+  Serial.println(resp.code);
+  Serial.println(resp.desc);
   // -----END SETUP------
 }
 
@@ -390,16 +435,15 @@ String clientIP() {
 
 void sendEmail(String subject, String message) {
   subject = subject + " | " + espname + " Accessed from IP: " + getXFFIP() + " | " + getTime();
-  if(gsender->Subject(subject)->Send(emailSendTo, message)) {
-    char data[50];
-    sprintf(data, "Message sent to %s", emailSendTo);
-    Serial.println(data);
-  } else {
-    char data[50];
-    sprintf(data, "Error sending message to %s", emailSendTo);
-    Serial.println(data);
-    Serial.println(gsender->getError());
-  }
+
+  EMailSender::EMailMessage emessage;
+  emessage.subject = subject;
+  emessage.message = message;
+  EMailSender::Response resp = emailSend.send("shekar@yahoo.com", emessage);
+  Serial.println("Sending status: ");
+  Serial.println(resp.status);
+  Serial.println(resp.code);
+  Serial.println(resp.desc);
 }
 
 String getTime() {

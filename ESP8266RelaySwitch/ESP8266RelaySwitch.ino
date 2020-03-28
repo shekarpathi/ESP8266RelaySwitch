@@ -3,14 +3,8 @@
 // git clone git@github.com:shekarpathi/ESP8266RelaySwitch.git
 // git clone https://github.com/shekarpathi/ESP8266RelaySwitch.git
 // --------------------------------------------------------------
-//  http://worldclockapi.com/api/json/est/now    Clock API
-//  http://worldtimeapi.org/api/ip
-//  https://arduinojson.org/assistant/
-//  http://www.instructables.com/id/ESP8266-Parsing-JSON/
-//  https://arduinojson.org/example/http-client/
 //  https://ubidots.com/blog/connect-your-esp8266-to-any-available-wi-fi-network/
 //  https://tttapa.github.io/ESP8266/Chap11%20-%20SPIFFS.html
-//  ArduinoJson Libraries needed - should be installed separately
 
 // --------------------------------------------------------------------------------------
 // REM OTA flash from the windows command line
@@ -44,13 +38,18 @@
 #include <ESP8266mDNS.h>
 #include <ESP8266WebServer.h>   // Include the WebServer library
 #include <ArduinoOTA.h>
-#include <ArduinoJson.h>
-#include <ESP8266HTTPClient.h>
 #include <ESP8266WiFiMulti.h>
 #define USE_SERIAL Serial
 #include "Secrets.h"
 #include <EEPROM.h>
 #include "EMailSender.h"
+#include <NTPClient.h>
+#include <WiFiUdp.h>
+
+WiFiUDP ntpUDP;
+NTPClient timeClientIST(ntpUDP, "in.pool.ntp.org", 5.5*60*60);
+NTPClient timeClientEST(ntpUDP, "2.pool.ntp.org", -5*60*60);
+NTPClient timeClientEDT(ntpUDP, "3.pool.ntp.org", -4*60*60);
 
 ESP8266WebServer server(80);            // Create a webserver object that listens for HTTP request on port 80
 EMailSender emailSend(EMAIL_FROM, EMAIL_PASSWORD);
@@ -124,7 +123,7 @@ void setup(void){
   WiFiSID1 = data.ssid;
   WiFiPWD1 = data.wifiPassword;
   switchpassword = data.switchPassword;
-  
+ 
   WiFi.mode(WIFI_STA);                             // #1 DO NOT CHAGE the order, this line should come before
   int setHostnameStatus = WiFi.hostname(espname);  // #2 This line is next
   if (setHostnameStatus == 1) {
@@ -167,28 +166,6 @@ void setup(void){
     }
   });
 
-  server.on("/printRequestHeaders" , HTTP_GET, printRequestHeaders);
-
-  server.on("/Led_On", HTTP_GET, []() {
-    if (authenticated("/Led_On")) {
-      digitalWrite(LED_PIN, 0);
-      server.send ( 200, "text/plain", "1");
-    }
-  });
-  
-  server.on("/Led_Off", HTTP_GET, []() {
-    if (authenticated("/Led_Off")) {
-      digitalWrite(LED_PIN, 1);
-      server.send ( 200, "text/plain", "0");
-    }
-  });
-  
-  server.on("/Led_Status", HTTP_GET, []() {
-    if (authenticated("/Led_Status")) {
-      server.send ( 200, "text/plain", String(!digitalRead(LED_PIN)));
-    }
-  });
-
   server.on("/Switch_On", HTTP_GET, []() {
     if (authenticated("/Switch_On")) {
       digitalWrite(RELAY_PIN, ON_STATE);
@@ -212,79 +189,6 @@ void setup(void){
   server.on("/Switch_On", HTTP_OPTIONS, sendCORSHeaders);
   server.on("/Switch_Off", HTTP_OPTIONS, sendCORSHeaders);
   server.on("/Switch_Status", HTTP_OPTIONS, sendCORSHeaders);
- 
-  server.on("/ChangeHostname", HTTP_GET, []() {
-    if (authenticated("/ChangeHostname")) {
-      String newHostName = server.arg("hostname"); 
-      Serial.println("newHostName="+newHostName);
-      EEPROM.begin(512); // Menu -> Tools -> Erase Flash is set to "Sketch Only"
-      EEPROM.get(addr,data);
-      Serial.println("3. Old values are: "+String(data.ESPHostname)+", "+String(data.ssid)+", "+String(data.wifiPassword)+", "+String(data.switchPassword));
-      strncpy(data.ESPHostname, newHostName.c_str(), 20);
-      EEPROM.put(addr,data);
-      EEPROM.commit();
-      EEPROM.get(addr,data);
-      Serial.println("4. New values are: "+String(data.ESPHostname)+", "+String(data.ssid)+", "+String(data.wifiPassword)+", "+String(data.switchPassword));
-      server.send ( 200, "text/plain", "New hostname is " + newHostName + ". Restarting ESP8266 now. Will take effect after this restart");
-      delay(3000);
-      ESP.restart();
-    }
-  });
- 
-  server.on("/SetSwitchPassword", HTTP_POST, []() {
-    if (authenticated("/SetSwitchPassword")) {
-      if (server.hasHeader("newSwitchPassword")) {
-        String newSwitchPassword = server.header("newSwitchPassword");
-        Serial.println("newSwitchPassword passed in header="+newSwitchPassword);
-        EEPROM.begin(512);
-        EEPROM.get(addr,data);
-        Serial.println("6. Old values are: "+String(data.ESPHostname)+", "+String(data.ssid)+", "+String(data.wifiPassword)+", "+String(data.switchPassword));
-        strncpy(data.switchPassword, newSwitchPassword.c_str(), 20);
-        EEPROM.put(addr,data);
-        EEPROM.commit();
-        EEPROM.get(addr,data);
-        Serial.println("7. New values are: "+String(data.ESPHostname)+", "+String(data.ssid)+", "+String(data.wifiPassword)+", "+String(data.switchPassword));
-        switchpassword = data.switchPassword;
-        String emailText = "New Switch password is: " + switchpassword + "<br>" + getStartupEmailString();
-
-        EMailSender::EMailMessage message;
-        message.subject = espname + " New switch password";
-        message.message = emailText;
-        EMailSender::Response resp = emailSend.send("shekar@yahoo.com", message);
-        Serial.println("Sending status: ");
-        Serial.println(resp.status);
-        Serial.println(resp.code);
-        Serial.println(resp.desc);
-        server.send ( 200, "text/plain", "New switchPassword is " + newSwitchPassword + ". Takes immediate effect. No restart necessary.");
-      } else {
-        String emailText = "SetSwitchPassword requested without newSwitchPassword header<br>";
-
-        EMailSender::EMailMessage message;
-        message.subject = espname + " no newSwitchPassword header";
-        message.message = emailText;
-        EMailSender::Response resp = emailSend.send("shekar@yahoo.com", message);
-        Serial.println("Sending status: ");
-        Serial.println(resp.status);
-        Serial.println(resp.code);
-        Serial.println(resp.desc);
-      }
-    }
-  });
- 
-  server.on("/emailSwitchPassword", HTTP_GET, []() {
-    switchpassword = data.switchPassword;
-    String emailText = "New Switch password is: " + switchpassword + "<br>" + getStartupEmailString();
-
-    EMailSender::EMailMessage message;
-    message.subject = espname + " current switch password";
-    message.message = emailText;
-    EMailSender::Response resp = emailSend.send("shekar@yahoo.com", message);
-    Serial.println("Sending status: ");
-    Serial.println(resp.status);
-    Serial.println(resp.code);
-    Serial.println(resp.desc);
-    server.send ( 200, "text/plain", "The switch password has been emailed to you");
-  });
  
   //here the list of headers to be recorded
   const char * headerkeys[] = {"User-Agent", "secret", "X-Forwarded-For", "host", "newSwitchPassword"} ;
@@ -343,12 +247,16 @@ void setup(void){
     digitalWrite(LED_PIN, ON_STATE);
   }
 
+  timeClientIST.begin();
+  timeClientEDT.begin();
+  timeClientEST.begin();
+
   upSince = getTime();
 
   EMailSender::EMailMessage message;
-  message.subject = espname + " Started";
-  message.message = getStartupEmailString();
-  EMailSender::Response resp = emailSend.send("shekar@yahoo.com", message);
+  message.subject = espname + " - Setup complete - Rebooted";
+  message.message = "Started";
+  EMailSender::Response resp = emailSend.send(emailSendTo, message);
   Serial.println("Sending status: ");
   Serial.println(message.message);
   Serial.println(resp.status);
@@ -370,14 +278,12 @@ void loop(void){
     emailSubject = "";
     emailContent = "";
   }
-  // 5 Restart at fixed intervals
-  // Comment the next section for 3-way switch configuration
-  // or comment the next section of you don't want restarts
-//  if(millis() - previousMillis > interval) {
-//    sendEmail("Restarting based on internal timer. " + espname, "Restarting " + espname + " ESP");
-//    delay(10000);
-//    ESP.restart();
-//  }
+
+  Serial.println(getCurrentIST());
+  Serial.println(getCurrentEDT());
+  Serial.println(getCurrentEST());
+  Serial.println("------");
+  delay(5000);
 }
 
 boolean authenticated(String path) {
@@ -405,18 +311,6 @@ boolean authenticated(String path) {
   }
 }
 
-void printRequestHeaders() {
-  String headers = "";
-  Serial.printf("num headers: %d\n",server.headers());
-  for(int i=0;i<server.headers();i++) {
-    headers = headers + server.headerName(i).c_str() +": "+server.header(i).c_str()+"<BR>\n";
-     Serial.printf("header: %s = %s\n", server.headerName(i).c_str(), server.header(i).c_str());
-  }
-  sendEmail("printRequestHeaders", "printRequestHeaders was requested");
-  server.send(200, "text/html", "<p><font size=\"7\">Your IP is: " + getXFFIP() + "<BR>This unauthorized access will be reported to FBI. Your machine has already been compromised and all your personal data exfiltrated.<BR>" + headers + "</font></p>");
-  server.client().stop();
-}
-
 String getXFFIP() {
   String xffIP = "-- No X-Forwarded-For found in request";
   if (server.hasHeader("X-Forwarded-For")) {
@@ -439,65 +333,11 @@ void sendEmail(String subject, String message) {
   EMailSender::EMailMessage emessage;
   emessage.subject = subject;
   emessage.message = message;
-  EMailSender::Response resp = emailSend.send("shekar@yahoo.com", emessage);
+  EMailSender::Response resp = emailSend.send(emailSendTo, emessage);
   Serial.println("Sending status: ");
   Serial.println(resp.status);
   Serial.println(resp.code);
   Serial.println(resp.desc);
-}
-
-String getTime() {
-  // This website gives you the time based on your IP
-  const char* datetime;
-  char dateAndTimeCharArray[50];
-  HTTPClient http;
-  http.setTimeout(10000);
-  
-  http.begin("http://worldtimeapi.org/api/ip");
-  int httpCode = http.GET();
-  Serial.print("1...worldtimeapi.org -> httpCode:");
-  Serial.println(httpCode);
-  int lenghtOfResponse = http.getSize();
-  Serial.print("2...worldtimeapi.org -> lenghtOfResponse:");
-  Serial.println(lenghtOfResponse);
-
-  if (httpCode > 0) {
-    if (httpCode == HTTP_CODE_OK) {
-      String jsonTimeResponse = http.getString();
-      //payload = "{\"week_number\":\"11\",\"utc_offset\":\"-04:00\",\"unixtime\":\"1552780656\",\"timezone\":\"America/New_York\",\"dst_until\":\"2019-11-03T06:00:00+00:00\",\"dst_from\":\"2019-03-10T07:00:00+00:00\",\"dst\":true,\"day_of_year\":75,\"day_of_week\":6,\"datetime\":\"2019-03-16T19:57:36.931858-04:00\",\"abbreviation\":\"EDT\"}";
-      Serial.print("Response: ");
-      Serial.println(jsonTimeResponse);
-
-      // Deserialize the JSON document
-      StaticJsonDocument<1024> doc;
-      DeserializationError error = deserializeJson(doc, jsonTimeResponse);
-      Serial.println("4... Deserialized");
-
-      // Test if parsing succeeds.
-      if (error) {
-        Serial.print("deserializeJson() failed: ");
-        Serial.println(error.c_str());
-        return "error";
-      }
-      Serial.println("5... No error");
-      datetime = doc["datetime"];
-      Serial.println(datetime);
-
-      // ------------
-      int Year;
-      int Month;
-      int Day;
-      int Hour;
-      int Minute;
-      int Second;
-      sscanf(datetime, "%d-%d-%dT%d:%d:%d", &Year, &Month, &Day, &Hour, &Minute, &Second);
-      snprintf ( dateAndTimeCharArray, 50, "%d/%d/%d %d:%02d:%02d", Month, Day, Year, Hour, Minute, Second); 
-      Serial.println(String(dateAndTimeCharArray));
-      // ------------
-    }
-  }
-  http.end();
-  return String(dateAndTimeCharArray);
 }
 
 void initializeEeprom()
@@ -553,16 +393,6 @@ String getStartupEmailString() {
   emailString += "<A HREF=http://" + WiFi.localIP().toString() + ">http://" + WiFi.localIP().toString() + "</A><BR>";
   emailString += "Connected to SID " + WiFi.SSID() + "<BR>";
 
-  emailString += "<hr><h3>Switch 0 Built in LED</h3>";
-  emailString += "<h4>Using DNS names .lan</h4>";
-  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+espname+".lan/Led_On<BR>";
-  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+espname+".lan/Led_Off<BR>";
-  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+espname+".lan/Led_Status<BR>";
-  emailString += "<h4>Using IP</h4>";
-  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+WiFi.localIP().toString()+"/Led_On<BR>";
-  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+WiFi.localIP().toString()+"/Led_Off<BR>";
-  emailString += "curl -H \"secret: "+switchpassword+"\" -X GET  http://"+WiFi.localIP().toString()+"/Led_Status<BR>";
-  
   emailString += "<hr><h3>Switch 2 Connected to the relay</h3>";
   emailString += "<h4>Using DNS names .lan</h4>";
   emailString += "curl -H \"secret: "+switchpassword+"\" -X GET http://"+espname+".lan/Switch_On<BR>";
@@ -591,13 +421,6 @@ String getStartupEmailString() {
   emailString += "<h4>Default Switch State</h4>";
   emailString += "Setting current state of the switch to " + String(OFF_STATE) + "<BR>";
 
-  emailString += "<hr>";
-  int n = WiFi.scanNetworks();
-  emailString += "<h3>WiFi Available in your area</h3>";
-  for (int i = 0; i < n; ++i)
-  { // Print SSID and RSSI for each network found Serial.print(i + 1);
-    emailString += String(i) + ". " + WiFi.SSID(i) + ":" + WiFi.encryptionType(i) + "<BR>";
-  }
   return emailString;
 }
 
@@ -607,5 +430,24 @@ void sendCORSHeaders(){
   server.sendHeader("Access-Control-Allow-Origin", "null");
   server.sendHeader("Access-Control-Max-Age", "60000");
   server.send(204);
+}
+
+String getCurrentIST() {
+ timeClientIST.update();
+  return timeClientIST.getFormattedTime();
+}
+
+String getCurrentEST() {
+  timeClientEST.update();
+  return timeClientEST.getFormattedTime();
+}
+
+String getCurrentEDT() {
+  timeClientEDT.update();
+  return timeClientEDT.getFormattedTime();
+}
+
+String getTime() {
+  getCurrentEDT();
 }
 

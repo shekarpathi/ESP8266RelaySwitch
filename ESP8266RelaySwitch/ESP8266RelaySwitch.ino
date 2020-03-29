@@ -34,20 +34,21 @@
 //  Also in Windows firewall (5.) Set a new rule for INBOUND firewall for "C:\dddd\vvv\Python.exe"
 //  Do these and it is guaranteed to work
 
+#define USE_SERIAL Serial
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
 #include <ESP8266WebServer.h>   // Include the WebServer library
 #include <ArduinoOTA.h>
-#include <ESP8266WiFiMulti.h>
-#define USE_SERIAL Serial
-#include "Secrets.h"
 #include <EEPROM.h>
+#include <WiFiUdp.h>
 #include "EMailSender.h"
 #include "NTPClient.h"
-#include <WiFiUdp.h>
+#include "Secrets.h"
 
 WiFiUDP ntpUDP;
 NTPClient timeClientIST(ntpUDP, "in.pool.ntp.org", 5.5 * 60 * 60);
+NTPClient timeClientEDT(ntpUDP, "pool.ntp.org",    -4 * 60 * 60);
+NTPClient timeClientEST(ntpUDP, "pool.ntp.org",    -5 * 60 * 60);
 
 ESP8266WebServer server(80);            // Create a webserver object that listens for HTTP request on port 80
 EMailSender emailSend(EMAIL_FROM, EMAIL_PASSWORD);
@@ -62,11 +63,6 @@ String upSince = "";
 String emailSubject = "";
 String emailContent = "";
 String emailString;
-
-long previousMillis = millis();   // will store current time in milli seconds
-long interval = 1000 * 60 * 60 * 24; // interval at which ESP8266 will restart in milliseconds
-
-ESP8266WiFiMulti wifiMulti;     // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
 
 uint addr = 0;
 
@@ -117,9 +113,9 @@ void setup(void) {
 
   // 3#) Write the values back from the structure/EEPROM to the ESP8266's memory
   // EEPROM contains the authoratitive data.  EEPROM and the memory variables will be in sync after this
-  espname = data.ESPHostname;
-  WiFiSID1 = data.ssid;
-  WiFiPWD1 = data.wifiPassword;
+  espname        = data.ESPHostname;
+  WiFiSID1       = data.ssid;
+  WiFiPWD1       = data.wifiPassword;
   switchpassword = data.switchPassword;
 
   WiFi.mode(WIFI_STA);                             // #1 DO NOT CHAGE the order, this line should come before
@@ -131,13 +127,9 @@ void setup(void) {
   }
 
   Serial.println("Connecting to WiFi..");
-  wifiMulti.addAP(WiFiSID1, WiFiPWD1);
-  wifiMulti.addAP(WiFiSID2, WiFiPWD2);
-  wifiMulti.addAP(WiFiSID3, WiFiPWD3);
-  wifiMulti.addAP(WiFiSID4, WiFiPWD4);
-
-  while (wifiMulti.run() != WL_CONNECTED) { // Wait for the Wi-Fi to connect: scan for Wi-Fi networks, and connect to the strongest of the networks listed above
-    delay(200);
+  WiFi.begin(WiFiSID1, WiFiPWD1);
+  while (WiFi.status() != WL_CONNECTED) { // Wait for the Wi-Fi to connect
+    delay(1000);
     Serial.print('.');
   }
   Serial.print("\nConnected to ");
@@ -164,29 +156,29 @@ void setup(void) {
     }
   });
 
-  server.on("/Switch_On", HTTP_GET, []() {
-    if (authenticated("/Switch_On")) {
+  server.on("/on", HTTP_GET, []() {
+    if (authenticated("/on")) {
       digitalWrite(RELAY_PIN, ON_STATE);
       server.send ( 200, "text/plain", "1");
     }
   });
 
-  server.on("/Switch_Off", HTTP_GET, []() {
-    if (authenticated("/Switch_Off")) {
+  server.on("/off", HTTP_GET, []() {
+    if (authenticated("/off")) {
       digitalWrite(RELAY_PIN, OFF_STATE);
       server.send ( 200, "text/plain", "0");
     }
   });
 
-  server.on("/Switch_Status", HTTP_GET, []() {
-    if (authenticated("/Switch_Status")) {
+  server.on("/state", HTTP_GET, []() {
+    if (authenticated("/state")) {
       server.send ( 200, "text/plain", String(digitalRead(RELAY_PIN)));
     }
   });
 
-  server.on("/Switch_On", HTTP_OPTIONS, sendCORSHeaders);
-  server.on("/Switch_Off", HTTP_OPTIONS, sendCORSHeaders);
-  server.on("/Switch_Status", HTTP_OPTIONS, sendCORSHeaders);
+  server.on("/on", HTTP_OPTIONS, sendCORSHeaders);
+  server.on("/off", HTTP_OPTIONS, sendCORSHeaders);
+  server.on("/state", HTTP_OPTIONS, sendCORSHeaders);
 
   //here the list of headers to be recorded
   const char * headerkeys[] = {"User-Agent", "secret", "X-Forwarded-For", "host", "newSwitchPassword"} ;
@@ -246,6 +238,7 @@ void setup(void) {
   }
 
   timeClientIST.begin();
+  delay(4000); // wait for four seconds so that the UDP gets the epoch time from the server
   upSince = getTime();
 
   EMailSender::EMailMessage message;
@@ -387,13 +380,13 @@ String getStartupEmailString() {
 
   emailString += "<hr><h3>GPIO 2 Connected to the relay</h3>";
   emailString += "<h4>Using DNS names .lan</h4>";
-  emailString += "curl -H \"secret: " + switchpassword + "\" -X GET http://" + espname + ".lan/Switch_On<BR>";
-  emailString += "curl -H \"secret: " + switchpassword + "\" -X GET http://" + espname + ".lan/Switch_Off<BR>";
-  emailString += "curl -H \"secret: " + switchpassword + "\" -X GET http://" + espname + ".lan/Switch_Status<BR>";
+  emailString += "curl -H \"secret: " + switchpassword + "\" -X GET http://" + espname + ".lan/on<BR>";
+  emailString += "curl -H \"secret: " + switchpassword + "\" -X GET http://" + espname + ".lan/off<BR>";
+  emailString += "curl -H \"secret: " + switchpassword + "\" -X GET http://" + espname + ".lan/state<BR>";
   emailString += "<h4>Using IP</h4>";
-  emailString += "curl -H \"secret: " + switchpassword + "\" -X GET http://" + WiFi.localIP().toString() + "/Switch_On<BR>";
-  emailString += "curl -H \"secret: " + switchpassword + "\" -X GET http://" + WiFi.localIP().toString() + "/Switch_Off<BR>";
-  emailString += "curl -H \"secret: " + switchpassword + "\" -X GET http://" + WiFi.localIP().toString() + "/Switch_Status<BR>";
+  emailString += "curl -H \"secret: " + switchpassword + "\" -X GET http://" + WiFi.localIP().toString() + "/on<BR>";
+  emailString += "curl -H \"secret: " + switchpassword + "\" -X GET http://" + WiFi.localIP().toString() + "/off<BR>";
+  emailString += "curl -H \"secret: " + switchpassword + "\" -X GET http://" + WiFi.localIP().toString() + "/state<BR>";
 
   emailString += "<hr><h3>Utility URLs. Do NOT access these from internet</h3>";
   emailString += "<h4>Using DNS names .lan</h4>";

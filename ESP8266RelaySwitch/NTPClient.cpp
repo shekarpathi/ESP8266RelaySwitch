@@ -55,9 +55,7 @@ void NTPClient::begin() {
 
 void NTPClient::begin(int port) {
   this->_port = port;
-
   this->_udp->begin(this->_port);
-
   this->_udpSetup = true;
 }
 
@@ -89,10 +87,8 @@ bool NTPClient::forceUpdate() {
   unsigned long secsSince1900 = highWord << 16 | lowWord;
 
   this->_currentEpoc = secsSince1900 - SEVENZYYEARS;
-
   return true;
 }
-
 bool NTPClient::update() {
   if ((millis() - this->_lastUpdate >= this->_updateInterval)     // Update after _updateInterval
     || this->_lastUpdate == 0) {                                // Update if there was no update yet.
@@ -101,13 +97,11 @@ bool NTPClient::update() {
   }
   return true;
 }
-
 unsigned long NTPClient::getEpochTime() const {
   return this->_timeOffset + // User offset
          this->_currentEpoc + // Epoc returned by the NTP server
          ((millis() - this->_lastUpdate) / 1000); // Time since last update
 }
-
 int NTPClient::getDay() const {
   return (((this->getEpochTime()  / 86400L) + 4 ) % 7); //0 is Sunday
 }
@@ -120,30 +114,15 @@ int NTPClient::getMinutes() const {
 int NTPClient::getSeconds() const {
   return (this->getEpochTime() % 60);
 }
-
 String NTPClient::getFormattedTime() const {
 	char timestamp[64] = {0};
-
 	time_t tt = this->getEpochTime();
-	strftime(timestamp, 64, "%B %d, %Y -> %r - %A ", localtime(&tt));
+	strftime(timestamp, 64, "%B %d, %Y %r, %A", localtime(&tt));
 	return timestamp;
-
-//	unsigned long rawTime = this->getEpochTime();
-//	unsigned long hours = (rawTime % 86400L) / 3600;
-//	String hoursStr = hours < 10 ? "0" + String(hours) : String(hours);
-
-//	unsigned long minutes = (rawTime % 3600) / 60;
-//	String minuteStr = minutes < 10 ? "0" + String(minutes) : String(minutes);
-
-//	unsigned long seconds = rawTime % 60;
-//	String secondStr = seconds < 10 ? "0" + String(seconds) : String(seconds);
-
-//	return hoursStr + ":" + minuteStr + ":" + secondStr;
 }
 
 void NTPClient::end() {
   this->_udp->stop();
-
   this->_udpSetup = false;
 }
 
